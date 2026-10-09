@@ -1,0 +1,67 @@
+{
+  "expo": {
+    "name": "Polderland",
+    "slug": "polderland",
+    "scheme": "polderland",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/89a18f90-ac81-4082-8f86-4e005bb8e8dc",
+      "fallbackToCacheTimeout": 0
+    },
+    "backgroundColor": "#0d1224",
+    "primaryColor": "#0d1224",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.alu.polderland",
+      "supportsTablet": true,
+      "requireFullScreen": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "UIStatusBarHidden": true,
+        "UIViewControllerBasedStatusBarAppearance": false,
+        "UISupportedInterfaceOrientations": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight"
+        ],
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight",
+          "UIInterfaceOrientationPortraitUpsideDown"
+        ],
+        "CFBundleLocalizations": [
+          "en",
+          "nl"
+        ],
+        "CFBundleDevelopmentRegion": "en"
+      }
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#0d1224"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "89a18f90-ac81-4082-8f86-4e005bb8e8dc"
+      }
+    }
+  }
+}

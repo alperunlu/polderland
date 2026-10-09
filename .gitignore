@@ -1,0 +1,28 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.iml
+*.swp
+*.log
+
+# Xcode / CocoaPods artefacts live under polderland-phaser/ios/.gitignore,
+# which Capacitor generated; nothing extra is needed here.
+#
+# Note: this file used to carry a blanket `*.png` rule left over from the
+# project's Flutter days. That silently kept the app icon and the store
+# screenshots out of the repository, which would have broken any build that
+# checks out the tree rather than using the working directory.
+
+# Store metadata, privacy pages and helper tools are kept locally, not in git.
+docs/
+tools/
+polderland-phaser/store/
+.claude/launch.json
+menu-screenshot.png
+/.claude

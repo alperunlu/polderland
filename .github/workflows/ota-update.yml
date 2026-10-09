@@ -1,0 +1,138 @@
+name: OTA update
+
+# Publishes the game to the installed iOS app over the air (EAS Update) every
+# time something that ends up in the game lands on main. No new build, no App
+# Review: players get it the next time they open the app twice.
+#
+# Required repository secret (the same one the TestFlight workflow uses):
+#   EXPO_TOKEN   A robot access token from expo.dev -> Account settings ->
+#                Access tokens.
+#
+# What it can and cannot change. An update replaces the JavaScript only: the
+# game, its art, text and balance. It can never reach a build whose native
+# code differs, so the app's runtime version is pinned to expo.version
+# (expo/app.json) and an update is only delivered to builds with the same one.
+# Anything that changes the native side -- a new package, a plugin, a native
+# module, an entitlement -- must come with a new `version` and a new build.
+# This workflow refuses to publish such a change without the bump, because the
+# alternative is an update that crashes the apps it is delivered to.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'polderland-phaser/src/**'
+      - 'polderland-phaser/index.html'
+      - 'polderland-phaser/package.json'
+      - 'polderland-phaser/package-lock.json'
+      - 'polderland-phaser/scripts/**'
+      - 'expo/App.js'
+      - 'expo/src/**'
+      - 'expo/app.json'
+      - 'expo/package.json'
+      - 'expo/package-lock.json'
+      - 'expo/modules/**'
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'Update message'
+        type: string
+        default: 'Manual update'
+
+concurrency:
+  group: ota-update
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ota:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The guard below compares against the commit before the push.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          # eas-cli will not install on Node 20 (see the TestFlight workflow).
+          node-version: 22
+
+      - name: Refuse a native change that did not bump the version
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "No earlier commit to compare with; skipping the native-change check."
+            exit 0
+          fi
+          native=$(git diff --name-only "$BEFORE" HEAD -- \
+            expo/modules expo/package.json expo/package-lock.json expo/app.json)
+          if [ -z "$native" ]; then
+            echo "Nothing native changed."
+            exit 0
+          fi
+          old=$(git show "$BEFORE:expo/app.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).expo.version")
+          new=$(node -p "require('./expo/app.json').expo.version")
+          if [ "$old" = "$new" ]; then
+            echo "::error::Native-side files changed but expo.version is still $new:"
+            echo "$native"
+            echo "An over-the-air update would reach apps that cannot run it."
+            echo "Bump expo.version in expo/app.json, make a new build, and publish"
+            echo "the update after that. If these files changed for a reason that"
+            echo "does not touch the native side (a comment, a name), run this"
+            echo "workflow by hand from the Actions tab."
+            exit 1
+          fi
+          echo "Version moved $old -> $new; this update targets the new runtime."
+
+      - name: Build the game
+        working-directory: polderland-phaser
+        run: |
+          npm ci
+          npm run build:single
+
+      - name: Install the app's dependencies
+        working-directory: expo
+        run: npm ci
+
+      - name: Put the built game into the app
+        working-directory: expo
+        run: npm run sync
+
+      - name: Say if the committed bundle was stale
+        run: |
+          # The update is built from source, so a stale committed bundle does
+          # not matter here, but it would fail the TestFlight workflow.
+          if ! git diff --quiet -- expo/src/gameHtml.js; then
+            echo "::warning::expo/src/gameHtml.js in the repository is out of date with the game source. This update uses the fresh build; commit the synced file before the next TestFlight build."
+          fi
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Confirm the token works
+        working-directory: expo
+        run: |
+          echo "Signed in as: $(eas whoami)"
+
+      - name: Publish the update
+        working-directory: expo
+        env:
+          # Through the environment, never spliced into the script: a commit
+          # message is text anyone can write.
+          MESSAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.message || github.event.head_commit.message }}
+        run: |
+          msg=$(printf '%s' "$MESSAGE" | head -n 1 | cut -c1-100)
+          eas update \
+            --branch production \
+            --platform ios \
+            --message "${msg:-Update}" \
+            --non-interactive

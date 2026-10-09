@@ -1,0 +1,7 @@
+{
+  "name": "polderland-game-center",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Expo module: Game Center sign-in and leaderboards for Polderland.",
+  "main": "index.js"
+}

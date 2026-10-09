@@ -1,0 +1,193 @@
+name: iOS TestFlight
+
+# Builds the game with EAS and sends it to TestFlight.
+#
+# This runs in CI rather than on anyone's machine because EAS needs to reach
+# expo.dev and Apple, and because it keeps every credential inside GitHub and
+# Expo instead of on a laptop.
+#
+# Required repository secret:
+#   EXPO_TOKEN   A robot access token from expo.dev -> Account settings ->
+#                Access tokens. The Apple signing credentials are held by EAS,
+#                not by this workflow.
+#
+# Optional repository secret:
+#   EXPO_APPLE_APP_SPECIFIC_PASSWORD
+#                Only for the Apple ID route to TestFlight, where eas.json
+#                also carries submit.production.ios.appleId. If an App Store
+#                Connect API key is registered on expo.dev instead, neither is
+#                needed.
+#
+# Apple credentials are held by EAS, at the account level rather than per
+# project. If your Expo account already has an App Store Connect API key
+# registered from an earlier app, this workflow needs nothing else: EAS will
+# create the certificate and provisioning profile for com.alu.polderland from
+# that key on the first build.
+#
+# If it does not, the build stops with a message saying the two ways to
+# add one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: 'Send the finished build to TestFlight'
+        type: boolean
+        default: true
+      submit_only:
+        description: 'Skip the build and send the last one already on EAS'
+        type: boolean
+        default: false
+      profile:
+        description: 'EAS build profile'
+        type: string
+        default: production
+  push:
+    tags:
+      - 'ios-v*'
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # eas-cli pulls in @oclif/plugin-autocomplete, which requires Node 22
+          # or newer. On Node 20 the CLI install fails outright.
+          node-version: 22
+
+      - name: Check the EAS project is linked
+        run: |
+          id=$(node -p "require('./expo/app.json').expo.extra?.eas?.projectId || ''")
+          if [ -z "$id" ]; then
+            echo "::error::expo/app.json has no extra.eas.projectId."
+            echo "Create the project on expo.dev, or run 'npx eas init' in expo/, then commit the change."
+            exit 1
+          fi
+          echo "EAS project: $id"
+
+      - name: Build the game
+        if: ${{ !inputs.submit_only }}
+        working-directory: polderland-phaser
+        run: |
+          npm ci
+          npm run build:single
+
+      - name: Install the app's dependencies
+        working-directory: expo
+        run: npm ci
+
+      - name: Check the committed game bundle is current
+        if: ${{ !inputs.submit_only }}
+        run: |
+          cd expo && npm run sync && cd ..
+          if ! git diff --quiet -- expo/src/gameHtml.js; then
+            echo "::error::expo/src/gameHtml.js is stale."
+            echo "The game has changed since the bundle was committed. Run:"
+            echo "  cd polderland-phaser && npm run build:single"
+            echo "  cd ../expo && npm run sync"
+            echo "  git add expo/src/gameHtml.js && git commit"
+            git diff --stat -- expo/src/gameHtml.js
+            exit 1
+          fi
+          echo "Committed bundle matches the current game."
+
+      - name: Verify the production JS bundle before spending a build
+        if: ${{ !inputs.submit_only }}
+        working-directory: expo
+        run: |
+          npx expo export --platform ios --output-dir "$RUNNER_TEMP/bundle"
+          # A bundle that does not register a root component launches and then
+          # aborts, with a crash log that points at React Native rather than at
+          # the cause. Catch that here, for free.
+          python3 - "$RUNNER_TEMP/bundle" <<'PY'
+          import pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          blob = b''.join(f.read_bytes() for f in root.rglob('*.hbc'))
+          if not blob:
+              sys.exit('no Hermes bundle was produced')
+          # Hermes stores any string containing a non-ASCII character as UTF-16,
+          # so both encodings have to be searched.
+          def present(s):
+              return s.encode() in blob or s.encode('utf-16-le') in blob
+          missing = [s for s in ('registerRootComponent', 'polderland:save', 'De Beemster')
+                     if not present(s)]
+          if missing:
+              sys.exit(f'bundle is missing: {missing}')
+          print(f'bundle ok, {len(blob)/1024/1024:.2f} MB')
+          PY
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Confirm the token works and the project resolves
+        working-directory: expo
+        run: |
+          # Five seconds of checking beats finding out after an upload.
+          echo "Signed in as: $(eas whoami)"
+          eas project:info
+
+      - name: EAS build
+        if: ${{ !inputs.submit_only }}
+        working-directory: expo
+        run: |
+          set -o pipefail
+          status=0
+          eas build \
+            --platform ios \
+            --profile "${{ inputs.profile || 'production' }}" \
+            --non-interactive \
+            --wait 2>&1 | tee "$RUNNER_TEMP/build.log" || status=$?
+          if [ "$status" -ne 0 ] && grep -qi 'Credentials are not set up' "$RUNNER_TEMP/build.log"; then
+            echo "::error::EAS has no iOS signing identity for com.alu.polderland."
+            echo "A --non-interactive build cannot create one: making a distribution"
+            echo "certificate means talking to Apple, which needs an API key or an"
+            echo "Apple ID with 2FA. Do it once, then this workflow is unattended:"
+            echo "  A) App Store Connect -> Users and Access -> Integrations -> Team Keys,"
+            echo "     create an App Manager key, then add the .p8, Key ID, Issuer ID and"
+            echo "     Team ID at expo.dev -> Account -> Credentials. Nothing else needed."
+            echo "  B) On any computer: cd expo && npx eas login && npx eas credentials --platform ios"
+          fi
+          exit "$status"
+
+      - name: Send to TestFlight
+        if: ${{ inputs.submit != false }}
+        working-directory: expo
+        env:
+          # Only needed on the Apple ID route. With an App Store Connect API
+          # key registered on expo.dev this is unused and can stay unset.
+          EXPO_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.EXPO_APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -o pipefail
+          status=0
+          eas submit \
+            --platform ios \
+            --profile production \
+            --latest \
+            --non-interactive 2>&1 | tee "$RUNNER_TEMP/submit.log" || status=$?
+          if [ "$status" -ne 0 ] \
+            && grep -qi 'App Store Connect API Keys cannot be set up' "$RUNNER_TEMP/submit.log"; then
+            echo "::error::The build is fine and the .ipa is on EAS; only the upload failed."
+            echo "Signing credentials and upload credentials are different things."
+            echo "eas credentials set up the first; uploading needs App Store Connect access,"
+            echo "which EAS cannot create in --non-interactive mode. Do one of:"
+            echo "  A) App Store Connect -> Users and Access -> Integrations -> Team Keys,"
+            echo "     create an App Manager key, add the .p8, Key ID, Issuer ID and Team ID"
+            echo "     at expo.dev -> Account -> Credentials."
+            echo "  B) Put your Apple ID in expo/eas.json as submit.production.ios.appleId,"
+            echo "     create an app-specific password at appleid.apple.com, and add it as"
+            echo "     the repository secret EXPO_APPLE_APP_SPECIFIC_PASSWORD."
+            echo "Then re-run this workflow with submit_only checked: it uploads the build"
+            echo "that already exists instead of spending another one."
+          fi
+          exit "$status"

@@ -1,0 +1,19 @@
+{
+  "name": "polderland-phaser",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/check-i18n.mjs && vite build",
+    "build:single": "npm run build && node scripts/build-single.mjs",
+    "preview": "vite preview",
+    "check:i18n": "node scripts/check-i18n.mjs"
+  },
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}

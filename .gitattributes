@@ -1,0 +1,15 @@
+# Every text file in the repo uses LF. Tools on Windows (and more than one
+# automated edit) have written CRLF back, which turns a one-line change into
+# a whole-file diff; normalising on commit stops that at the source.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary

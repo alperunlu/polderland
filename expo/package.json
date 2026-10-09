@@ -1,0 +1,30 @@
+{
+  "name": "polderland-ios",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "sync": "node scripts/sync-game.mjs",
+    "build": "eas build --platform ios --profile production",
+    "submit": "eas submit --platform ios --latest",
+    "ota": "npm run sync && eas update --branch production"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "^57.0.22",
+    "expo-asset": "~57.0.17",
+    "expo-audio": "~57.0.5",
+    "expo-haptics": "~57.0.3",
+    "expo-splash-screen": "~57.0.9",
+    "expo-status-bar": "~57.0.1",
+    "expo-system-ui": "~57.0.4",
+    "expo-updates": "~57.0.22",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-webview": "13.16.1"
+  },
+  "devDependencies": {
+    "babel-preset-expo": "~57.0.11"
+  }
+}
