@@ -1,8 +1,16 @@
 name: OTA update
 
 # Publishes the game to the installed iOS app over the air (EAS Update) every
-# time something that ends up in the game lands on main. No new build, no App
-# Review: players get it the next time they open the app twice.
+# time something that ends up in the game lands on the `ota` branch. No new
+# build, no App Review: players get it the next time they open the app twice.
+#
+# Work happens on main, which never publishes anything. To release, merge main
+# into ota and push it:
+#
+#   git checkout ota && git merge --ff-only main && git push origin ota
+#
+# Only pushes to ota publish, and a manual run from the Actions tab publishes
+# only when it is started on ota.
 #
 # Required repository secret (the same one the TestFlight workflow uses):
 #   EXPO_TOKEN   A robot access token from expo.dev -> Account settings ->
@@ -19,7 +27,7 @@ name: OTA update
 
 on:
   push:
-    branches: [main]
+    branches: [ota]
     paths:
       - 'polderland-phaser/src/**'
       - 'polderland-phaser/index.html'
@@ -48,6 +56,8 @@ permissions:
 
 jobs:
   ota:
+    # A manual run started on another branch would publish that branch.
+    if: github.ref == 'refs/heads/ota'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
